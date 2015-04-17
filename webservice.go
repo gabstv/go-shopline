@@ -1,6 +1,13 @@
 package shopline
 
 import (
+	"bytes"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"log"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -8,6 +15,8 @@ const (
 	URL_BOLETO   = "https://shopline.itau.com.br/shopline/Itaubloqueto.asp"
 	URL_CONSULTA = "https://shopline.itau.com.br/shopline/consulta.asp"
 	URL_SHOPLINE = "https://shopline.itau.com.br/shopline/shopline.asp"
+	CPF          = "01"
+	CNPJ         = "02"
 )
 
 type Webservice struct {
@@ -17,8 +26,9 @@ type Webservice struct {
 }
 
 type BoletoDef struct {
+	Pedido          int
 	Valor           float64
-	Obs             string
+	Observacao      string
 	NomeCliente     string
 	CodigoInscricao string
 	NumeroInscricao string
@@ -28,6 +38,51 @@ type BoletoDef struct {
 	Cidade          string
 	Estado          string
 	Vencimento      time.Time
+	URL_Retorno     string
+	Obs1            string
+	Obs2            string
+	Obs3            string
+}
+
+func (b BoletoDef) Clean() {
+
+}
+
+func (b BoletoDef) cleanPedido() string {
+	return rjust(strconv.Itoa(b.Pedido), "0", 8)
+}
+
+func (b BoletoDef) cleanValor() string {
+	vlrs := strings.Replace(strings.Replace(moneyf(b.Valor), ",", "", 0), ".", "", 0)
+	return rjust(vlrs, "0", 10)
+}
+
+func (b BoletoDef) cleanVencimento() string {
+	return fmt.Sprintf("%02d%02d%04d", b.Vencimento.Day(), int(b.Vencimento.Month()), b.Vencimento.Year())
+}
+
+func (b BoletoDef) cleanCodigoInscricao() string {
+	return rjust(b.CodigoInscricao, "0", 2)
+}
+
+func (b BoletoDef) ToToken() string {
+	var buffer bytes.Buffer
+	buffer.WriteString(b.cleanPedido())
+	buffer.WriteString(b.cleanValor())
+	buffer.WriteString(b.Observacao)
+	buffer.WriteString(b.NomeCliente)
+	buffer.WriteString(b.cleanCodigoInscricao())
+	buffer.WriteString(b.NumeroInscricao)
+	buffer.WriteString(b.Endereco)
+	buffer.WriteString(b.Bairro)
+	buffer.WriteString(b.CEP)
+	buffer.WriteString(b.Cidade)
+	buffer.WriteString(b.cleanVencimento())
+	buffer.WriteString(b.URL_Retorno)
+	buffer.WriteString(b.Obs1)
+	buffer.WriteString(b.Obs2)
+	buffer.WriteString(b.Obs3)
+	return buffer.String()
 }
 
 func New(codigo, chave string) *Webservice {
@@ -37,6 +92,27 @@ func New(codigo, chave string) *Webservice {
 
 func (ws *Webservice) NewBoleto(boleto BoletoDef) {
 
+}
+func (ws *Webservice) assert() error {
+	if len(ws.Codigo) != 26 {
+		return errors.New("Tamanho do codigo da empresa diferente de 26 posições")
+	}
+	if len(ws.Chave) != 16 {
+		return errors.New("Tamanho da chave da chave diferente de 16 posições")
+	}
+	return nil
+}
+func (ws *Webservice) process(boleto BoletoDef) (a int, err error) {
+	err = assert()
+	if err != nil {
+		return
+	}
+	if v := rjust(boleto.CodigoInscricao, "0", 2); v != CPF && v != CNPJ {
+		err = "Código de Inscrição Inválido 01 = CPF, 02 = CNPJ"
+		return
+	}
+	boleto.Clean()
+	chave1 := algoritmo(boleto.ToToken(), ws.Chave)
 }
 
 func rjust(in, fill string, length int) string {
@@ -51,4 +127,95 @@ func ljust(in, fill string, length int) string {
 		in = in + fill
 	}
 	return in
+}
+
+// Itau usa encryption própria
+// token =
+// 'pedido', 'valor', 'observacao',
+//          'nome', 'codigo_inscricao', 'numero_inscricao', 'endereco', 'bairro', 'cep',
+//          'cidade', 'estado', 'vencimento', 'url_retorno', 'obs_1', 'obs_2', 'obs_3'
+func algoritmo(token, chave string) string {
+	// inicializa
+	indices := make([]int, 256)
+	asc_codes := make([]rune, 256)
+	for i := 0; i < 256; i++ {
+		asc_codes[i] = rune(chave[i%len(chave)])
+		indices[i] = i
+	}
+	l := 0
+	for k := 0; k < 256; k++ {
+		l = (l + indices[k] + int(asc_codes[k])) % 256
+
+		i := indices[k]
+		indices[k] = indices[i]
+		indices[l] = i
+	}
+	// algoritmo
+	var data_chave bytes.Buffer
+	l = 0
+	for j := 1; j < len(token)+1; j++ {
+		k := j % 256
+		l = (l + indices[k]) % 256
+		i := indices[k]
+		indices[k] = indices[l]
+		indices[l] = i
+		//caracter = int(ord(token[(j-1):j]) ^ int(self.indices[(self.indices[k] + self.indices[l]) % 256]))
+		caracter := rune(int(token[j-1]) ^ indices[(indices[k]+indices[l])%256])
+		log.Println(caracter)
+		data_chave.WriteRune(caracter)
+	}
+	return data_chave.String()
+}
+func rr(min, max int) int {
+	b := make([]byte, 1)
+	rand.Read(b)
+	return min + int((float64(b[0])/256)*float64(max-min))
+}
+func rnd() rune {
+	alfa := "ABCDEFGHIJKLMNOPQRSTUVXWYZ"
+	return rune(alfa[rr(0, len(alfa))])
+}
+func converte(chave) {
+	var data_rand bytes.Buffer
+	data_rand.WriteRune(rnd())
+	for i := 0; i < len(chave); i++ {
+		data_rand.WriteString(strconv.Itoa(int(chave[i])))
+		data_rand.WriteRune(rnd())
+	}
+}
+
+// gabs copypasta
+
+func moneyf(inp float64) string {
+	str0 := fmt.Sprintf("%0.2f\n", inp)
+	na := strings.Split(str0, ".")
+	big := na[0]
+	var frac string
+	if len(na) < 2 {
+		frac = "0"
+	} else {
+		frac = na[1]
+	}
+	b := new(bytes.Buffer)
+	n := 0
+	for i := len(big) - 1; i >= 0; i-- {
+		b.WriteByte(big[i])
+		n++
+		if n == 3 {
+			if i > 0 {
+				if big[i-1] != '-' {
+					b.WriteByte('.')
+					n = 0
+				}
+			}
+		}
+	}
+	// invert again
+	str0 = b.String()
+	b.Truncate(0)
+	for i := len(str0) - 1; i >= 0; i-- {
+		b.WriteByte(str0[i])
+	}
+	big = b.String()
+	return big + "," + frac
 }
