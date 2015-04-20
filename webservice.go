@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,17 +14,19 @@ import (
 )
 
 const (
-	URL_BOLETO   = "https://shopline.itau.com.br/shopline/Itaubloqueto.asp"
-	URL_CONSULTA = "https://shopline.itau.com.br/shopline/consulta.asp"
-	URL_SHOPLINE = "https://shopline.itau.com.br/shopline/shopline.asp"
-	CPF          = "01"
-	CNPJ         = "02"
+	URL_BOLETO         = "https://shopline.itau.com.br/shopline/Itaubloqueto.asp"
+	URL_BOLETO_HOMOLOG = "https://shopline.itau.com.br/shopline/emissao_teste.asp"
+	URL_CONSULTA       = "https://shopline.itau.com.br/shopline/consulta.asp"
+	URL_SHOPLINE       = "https://shopline.itau.com.br/shopline/shopline.asp"
+	CPF                = "01"
+	CNPJ               = "02"
 )
 
 type Webservice struct {
-	Codigo    string
-	Chave     string
-	ChaveItau string
+	Codigo      string
+	Chave       string
+	ChaveItau   string
+	Homologacao bool
 }
 
 type BoletoDef struct {
@@ -89,7 +90,7 @@ func (b BoletoDef) ToToken() string {
 }
 
 func New(codigo, chave string) *Webservice {
-	ws := &Webservice{codigo, chave, "SEGUNDA12345ITAU"}
+	ws := &Webservice{codigo, chave, "SEGUNDA12345ITAU", false}
 	return ws
 }
 
@@ -167,7 +168,6 @@ func algoritmo(token, chave string) string {
 		indices[l] = i
 		//caracter = int(ord(token[(j-1):j]) ^ int(self.indices[(self.indices[k] + self.indices[l]) % 256]))
 		caracter := rune(int(token[j-1]) ^ indices[(indices[k]+indices[l])%256])
-		log.Println(caracter)
 		data_chave.WriteRune(caracter)
 	}
 	return data_chave.String()
