@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -118,16 +121,16 @@ func (ws *Webservice) process(boleto BoletoDef) (res string, err error) {
 	return
 }
 
-func rjust(in, fill string, length int) string {
+func rjust(in, fillchar string, length int) string {
 	for len(in) < length {
-		in = fill + in
+		in = fillchar + in
 	}
 	return in
 }
 
-func ljust(in, fill string, length int) string {
+func ljust(in, fillchar string, length int) string {
 	for len(in) < length {
-		in = in + fill
+		in = in + fillchar
 	}
 	return in
 }
@@ -186,6 +189,37 @@ func converte(chave string) string {
 		data_rand.WriteRune(rnd())
 	}
 	return data_rand.String()
+}
+func make_post_page(dc string) string {
+	return fmt.Sprintf("<html><body><form method=\"post\" action=\"%v\" id=\"itaushopline\"><input type=\"hidden\" name=\"DC\" value=\"%v\"></form><script>document.getElementById('itaushopline').submit();</script></body></html>", URL_BOLETO, dc)
+}
+func (ws *Webservice) sonda(pedido int, formato string) (io.ReadCloser, error) {
+	if formato != "0" && formato != "1" {
+		if err := ws.assert(); err != nil {
+			return nil, err
+		}
+	}
+	chave1 := algoritmo(rjust(strconv.Itoa(pedido), "0", 8)+formato, ws.Chave)
+	chave2 := algoritmo(ws.Codigo+chave1, ws.ChaveItau)
+	dc := converte(chave2)
+	cl := http.DefaultClient
+	cl.Timeout = time.Second * 30
+	buffer := new(bytes.Buffer)
+	v := url.Values{}
+	v.Set("DC", dc)
+	buffer.WriteString(v.Encode())
+	req, err := http.NewRequest("POST", URL_CONSULTA, buffer)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := cl.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New("HTTP STATUS CODE " + strconv.Itoa(resp.StatusCode) + " " + resp.Status)
+	}
+	return resp.Body, nil
 }
 
 // gabs copypasta
