@@ -102,17 +102,20 @@ func (ws *Webservice) assert() error {
 	}
 	return nil
 }
-func (ws *Webservice) process(boleto BoletoDef) (a int, err error) {
-	err = assert()
+func (ws *Webservice) process(boleto BoletoDef) (res string, err error) {
+	err = ws.assert()
 	if err != nil {
 		return
 	}
 	if v := rjust(boleto.CodigoInscricao, "0", 2); v != CPF && v != CNPJ {
-		err = "Código de Inscrição Inválido 01 = CPF, 02 = CNPJ"
+		err = errors.New("Código de Inscrição Inválido 01 = CPF, 02 = CNPJ")
 		return
 	}
 	boleto.Clean()
 	chave1 := algoritmo(boleto.ToToken(), ws.Chave)
+	chave2 := algoritmo(ws.Codigo+chave1, ws.ChaveItau)
+	res = converte(chave2)
+	return
 }
 
 func rjust(in, fill string, length int) string {
@@ -175,13 +178,14 @@ func rnd() rune {
 	alfa := "ABCDEFGHIJKLMNOPQRSTUVXWYZ"
 	return rune(alfa[rr(0, len(alfa))])
 }
-func converte(chave) {
+func converte(chave string) string {
 	var data_rand bytes.Buffer
 	data_rand.WriteRune(rnd())
 	for i := 0; i < len(chave); i++ {
 		data_rand.WriteString(strconv.Itoa(int(chave[i])))
 		data_rand.WriteRune(rnd())
 	}
+	return data_rand.String()
 }
 
 // gabs copypasta
