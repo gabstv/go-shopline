@@ -8,19 +8,84 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
+var (
+	R  = false
+	r0 = regexp.MustCompile("<consulta>(.+)\\s*<\\/consulta>")
+)
+
 const (
-	URL_BOLETO         = "https://shopline.itau.com.br/shopline/Itaubloqueto.asp"
+	URL_BOLETO         = "https://shopline.itau.com.br/shopline/Impressao.aspx"
 	URL_BOLETO_HOMOLOG = "https://shopline.itau.com.br/shopline/emissao_teste.asp"
-	URL_CONSULTA       = "https://shopline.itau.com.br/shopline/consulta.asp"
-	URL_SHOPLINE       = "https://shopline.itau.com.br/shopline/shopline.asp"
+	URL_CONSULTA       = "https://shopline.itau.com.br/shopline/consulta.aspx"
+	URL_SHOPLINE       = "https://shopline.itau.com.br/shopline/shopline.aspx"
 	CPF                = "01"
 	CNPJ               = "02"
+	// status pagamento
+	STAT_PAGAMENTO_EFETUADO           = "00"
+	STAT_SIT_PAGAMENTO_NAO_FINALIZADO = "01"
+	STAT_ERR_NA_CONSULTA              = "02"
+	STAT_PEDIDO_NAO_LOCALIZADO        = "03"
+	STAT_BOLETO_EMITIDO_COM_SUCESSO   = "04"
+	STAT_PGTO_EFETUADO_AG_COMPENSACAO = "05"
+	STAT_PGTO_NAO_COMPENSADO          = "06"
 )
+
+var trmap = map[rune]rune{
+	'Š': 'S', 'Œ': 'O', 'Ž': 'Z', 'š': 's', 'œ': 'o', 'ž': 'z', 'Ÿ': 'Y', '¥': 'Y',
+	'µ': 'u', 'À': 'A', 'Á': 'A', 'Â': 'A', 'Ã': 'A', 'Ä': 'A', 'Å': 'A', 'Æ': 'A',
+	'Ç': 'C', 'È': 'E', 'É': 'E', 'Ê': 'E', 'Ë': 'E', 'Ì': 'I', 'Í': 'I', 'Î': 'I',
+	'Ï': 'I', 'Ð': 'D', 'Ñ': 'N', 'Ò': 'O', 'Ó': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O',
+	'Ø': 'O', 'Ù': 'U', 'Ú': 'U', 'Û': 'U', 'Ü': 'U', 'Ý': 'Y', 'ß': 's', 'à': 'a',
+	'á': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'å': 'a', 'æ': 'a', 'ç': 'c', 'è': 'e',
+	'é': 'e', 'ê': 'e', 'ë': 'e', 'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i', 'ð': 'o',
+	'ñ': 'n', 'ò': 'o', 'ó': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o', 'ø': 'o', 'ù': 'u',
+	'ú': 'u', 'û': 'u', 'ü': 'u', 'ý': 'y', 'ÿ': 'y',
+}
+
+var whitelist = []int{
+	32, 33, 34, 37, 39, 40, 41, 42, 43, 44, 45, 45, 46, 48, 49, 50, 51, 52, 53, 54,
+	55, 56, 57, 58, 60, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76,
+	77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 95, 97, 98, 99, 100, 101,
+	102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118,
+	119, 120, 121, 122,
+}
+
+func fixrune(r rune) rune {
+	if v, ok := trmap[r]; ok {
+		r = v
+	}
+	v2 := int(r)
+	i := sort.Search(len(whitelist), func(i int) bool {
+		return whitelist[i] >= v2
+	})
+	if i < len(whitelist) && whitelist[i] == v2 {
+		return r
+	}
+	// not whitelisted
+	return ' '
+}
+
+func cleanstr(v string) string {
+	b := new(bytes.Buffer)
+	for _, r := range v {
+		b.WriteRune(fixrune(r))
+	}
+	return strings.ToUpper(b.String())
+}
+
+func strim(v string, maxlen int) string {
+	if len(v) > maxlen {
+		return v[:maxlen]
+	}
+	return v
+}
 
 type Webservice struct {
 	Codigo      string
@@ -48,8 +113,25 @@ type BoletoDef struct {
 	Obs3            string
 }
 
-func (b BoletoDef) Clean() {
-
+func (b BoletoDef) Clean() BoletoDef {
+	c := BoletoDef{}
+	c.Pedido = b.Pedido
+	c.Valor = b.Valor
+	c.Vencimento = b.Vencimento
+	c.CodigoInscricao = b.cleanCodigoInscricao()
+	c.Observacao = ljust(strim(cleanstr(b.Observacao), 40), " ", 40)
+	c.Obs1 = ljust(strim(cleanstr(b.Obs1), 60), " ", 60)
+	c.Obs2 = ljust(strim(cleanstr(b.Obs2), 60), " ", 60)
+	c.Obs3 = ljust(strim(cleanstr(b.Obs3), 60), " ", 60)
+	c.NomeCliente = ljust(strim(cleanstr(b.NomeCliente), 30), " ", 30)
+	c.NumeroInscricao = ljust(strim(cleanstr(b.NumeroInscricao), 14), " ", 14)
+	c.Endereco = ljust(strim(cleanstr(b.Endereco), 40), " ", 40)
+	c.Bairro = ljust(strim(cleanstr(b.Bairro), 15), " ", 15)
+	c.CEP = ljust(strim(cleanstr(b.CEP), 8), " ", 8)
+	c.Cidade = ljust(strim(cleanstr(b.Cidade), 15), " ", 15)
+	c.Estado = ljust(strim(cleanstr(b.Estado), 2), " ", 2)
+	c.URL_Retorno = ljust(strim(cleanstr(b.URL_Retorno), 60), " ", 60)
+	return c
 }
 
 func (b BoletoDef) cleanPedido() string {
@@ -57,7 +139,7 @@ func (b BoletoDef) cleanPedido() string {
 }
 
 func (b BoletoDef) cleanValor() string {
-	vlrs := strings.Replace(strings.Replace(moneyf(b.Valor), ",", "", 0), ".", "", 0)
+	vlrs := strings.Replace(strings.Replace(moneyf(b.Valor), ",", "", -1), ".", "", -1)
 	return rjust(vlrs, "0", 10)
 }
 
@@ -71,21 +153,23 @@ func (b BoletoDef) cleanCodigoInscricao() string {
 
 func (b BoletoDef) ToToken() string {
 	var buffer bytes.Buffer
-	buffer.WriteString(b.cleanPedido())
-	buffer.WriteString(b.cleanValor())
-	buffer.WriteString(b.Observacao)
-	buffer.WriteString(b.NomeCliente)
-	buffer.WriteString(b.cleanCodigoInscricao())
-	buffer.WriteString(b.NumeroInscricao)
-	buffer.WriteString(b.Endereco)
-	buffer.WriteString(b.Bairro)
-	buffer.WriteString(b.CEP)
-	buffer.WriteString(b.Cidade)
-	buffer.WriteString(b.cleanVencimento())
-	buffer.WriteString(b.URL_Retorno)
-	buffer.WriteString(b.Obs1)
-	buffer.WriteString(b.Obs2)
-	buffer.WriteString(b.Obs3)
+	c := b.Clean()
+	buffer.WriteString(c.cleanPedido())
+	buffer.WriteString(c.cleanValor())
+	buffer.WriteString(c.Observacao)
+	buffer.WriteString(c.NomeCliente)
+	buffer.WriteString(c.CodigoInscricao)
+	buffer.WriteString(c.NumeroInscricao)
+	buffer.WriteString(c.Endereco)
+	buffer.WriteString(c.Bairro)
+	buffer.WriteString(c.CEP)
+	buffer.WriteString(c.Cidade)
+	buffer.WriteString(c.Estado)
+	buffer.WriteString(c.cleanVencimento())
+	buffer.WriteString(c.URL_Retorno)
+	buffer.WriteString(c.Obs1)
+	buffer.WriteString(c.Obs2)
+	buffer.WriteString(c.Obs3)
 	return buffer.String()
 }
 
@@ -94,9 +178,56 @@ func New(codigo, chave string) *Webservice {
 	return ws
 }
 
-func (ws *Webservice) NewBoleto(boleto BoletoDef) {
+func (ws *Webservice) GetBoleto(boleto BoletoDef) ([]byte, error) {
+	dc, err := ws.process(boleto)
+	if err != nil {
+		return nil, err
+	}
 
+	v := url.Values{}
+	v.Set("DC", dc)
+	v.Set("cliente", "N")
+	v.Set("CodEmp", ws.Codigo)
+	v.Set("IdSite", "29772")
+	v.Set("npedido", boleto.cleanPedido())
+	v.Set("flag", "1")
+	v.Set("emissao", "1")
+	v.Set("soagenda", "")
+	buffer := new(bytes.Buffer)
+	buffer.WriteString(v.Encode())
+	req, err := http.NewRequest("POST", URL_BOLETO, buffer)
+	if err != nil {
+		return nil, err
+	}
+	cl := http.DefaultClient
+	cl.Timeout = time.Second * 30
+	resp, err := cl.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New("HTTP STATUS CODE " + strconv.Itoa(resp.StatusCode) + " " + resp.Status)
+	}
+	buffer.Reset()
+	defer resp.Body.Close()
+	io.Copy(buffer, resp.Body)
+	return buffer.Bytes(), nil
 }
+
+func (ws *Webservice) GetBoletoRedirectHTML(boleto BoletoDef) (string, error) {
+	dc, err := ws.process(boleto)
+	if err != nil {
+		return "", err
+	}
+	buf := new(bytes.Buffer)
+	buf.WriteString("<html><body><form method=\"post\" action=\"")
+	buf.WriteString(URL_SHOPLINE)
+	buf.WriteString("\" id=\"itaushopline\"><input type=\"hidden\" name=\"DC\" value=\"")
+	buf.WriteString(dc)
+	buf.WriteString("\"></form><script>document.getElementById('itaushopline').submit();</script></body></html>")
+	return buf.String(), nil
+}
+
 func (ws *Webservice) assert() error {
 	if len(ws.Codigo) != 26 {
 		return errors.New("Tamanho do codigo da empresa diferente de 26 posições")
@@ -115,9 +246,8 @@ func (ws *Webservice) process(boleto BoletoDef) (res string, err error) {
 		err = errors.New("Código de Inscrição Inválido 01 = CPF, 02 = CNPJ")
 		return
 	}
-	boleto.Clean()
-	chave1 := algoritmo(boleto.ToToken(), ws.Chave)
-	chave2 := algoritmo(ws.Codigo+chave1, ws.ChaveItau)
+	chave1 := algoritmo([]byte(boleto.ToToken()), ws.Chave)
+	chave2 := algoritmo(append([]byte(ws.Codigo), chave1...), ws.ChaveItau)
 	res = converte(chave2)
 	return
 }
@@ -136,15 +266,11 @@ func ljust(in, fillchar string, length int) string {
 	return in
 }
 
-// Itau usa encryption própria
-// token =
-// 'pedido', 'valor', 'observacao',
-//          'nome', 'codigo_inscricao', 'numero_inscricao', 'endereco', 'bairro', 'cep',
-//          'cidade', 'estado', 'vencimento', 'url_retorno', 'obs_1', 'obs_2', 'obs_3'
-func algoritmo(token, chave string) string {
+func inicializa(chave string) (indices []int, asc_codes []rune) {
+	chave = strings.ToUpper(chave)
 	// inicializa
-	indices := make([]int, 256)
-	asc_codes := make([]rune, 256)
+	indices = make([]int, 256)
+	asc_codes = make([]rune, 256)
 	for i := 0; i < 256; i++ {
 		asc_codes[i] = rune(chave[i%len(chave)])
 		indices[i] = i
@@ -154,25 +280,41 @@ func algoritmo(token, chave string) string {
 		l = (l + indices[k] + int(asc_codes[k])) % 256
 
 		i := indices[k]
-		indices[k] = indices[i]
-		indices[l] = i
-	}
-	// algoritmo
-	var data_chave bytes.Buffer
-	l = 0
-	for j := 1; j < len(token)+1; j++ {
-		k := j % 256
-		l = (l + indices[k]) % 256
-		i := indices[k]
 		indices[k] = indices[l]
 		indices[l] = i
-		//caracter = int(ord(token[(j-1):j]) ^ int(self.indices[(self.indices[k] + self.indices[l]) % 256]))
-		caracter := rune(int(token[j-1]) ^ indices[(indices[k]+indices[l])%256])
-		data_chave.WriteRune(caracter)
 	}
-	return data_chave.String()
+	return
+}
+
+// Itau usa encryption própria
+// token =
+// 'pedido', 'valor', 'observacao',
+//          'nome', 'codigo_inscricao', 'numero_inscricao', 'endereco', 'bairro', 'cep',
+//          'cidade', 'estado', 'vencimento', 'url_retorno', 'obs_1', 'obs_2', 'obs_3'
+func algoritmo(token []byte, chave string) []byte {
+	chave = strings.ToUpper(chave)
+	// inicializa
+	indices, _ := inicializa(chave)
+	// algoritmo
+	var data_chave bytes.Buffer
+	m := 0
+	k := 0
+	for j := 1; j <= len(token); j++ {
+		k = (k + 1) % 256
+		m = (m + indices[k]) % 256
+		i := indices[k]
+		indices[k] = indices[m]
+		indices[m] = i
+		n := indices[((indices[k] + indices[m]) % 256)]
+		caracter := byte(int(token[j-1]) ^ n)
+		data_chave.WriteByte(caracter)
+	}
+	return data_chave.Bytes()
 }
 func rr(min, max int) int {
+	if R {
+		return min
+	}
 	b := make([]byte, 1)
 	rand.Read(b)
 	return min + int((float64(b[0])/256)*float64(max-min))
@@ -181,7 +323,7 @@ func rnd() rune {
 	alfa := "ABCDEFGHIJKLMNOPQRSTUVXWYZ"
 	return rune(alfa[rr(0, len(alfa))])
 }
-func converte(chave string) string {
+func converte(chave []byte) string {
 	var data_rand bytes.Buffer
 	data_rand.WriteRune(rnd())
 	for i := 0; i < len(chave); i++ {
@@ -199,25 +341,15 @@ func (ws *Webservice) sonda(pedido int, formato string) (io.ReadCloser, error) {
 			return nil, err
 		}
 	}
-	chave1 := algoritmo(rjust(strconv.Itoa(pedido), "0", 8)+formato, ws.Chave)
-	chave2 := algoritmo(ws.Codigo+chave1, ws.ChaveItau)
+	chave1 := algoritmo([]byte(rjust(strconv.Itoa(pedido), "0", 8)+formato), ws.Chave)
+	chave2 := algoritmo(append([]byte(ws.Codigo), chave1...), ws.ChaveItau)
 	dc := converte(chave2)
-	cl := http.DefaultClient
-	cl.Timeout = time.Second * 30
-	buffer := new(bytes.Buffer)
-	v := url.Values{}
-	v.Set("DC", dc)
-	buffer.WriteString(v.Encode())
-	req, err := http.NewRequest("POST", URL_CONSULTA, buffer)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := cl.Do(req)
+	resp, err := http.Get(URL_CONSULTA + "?DC=" + dc)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.New("HTTP STATUS CODE " + strconv.Itoa(resp.StatusCode) + " " + resp.Status)
+		return nil, errors.New("HTTP STATUS CODE " + resp.Status)
 	}
 	return resp.Body, nil
 }
@@ -225,7 +357,7 @@ func (ws *Webservice) sonda(pedido int, formato string) (io.ReadCloser, error) {
 // gabs copypasta
 
 func moneyf(inp float64) string {
-	str0 := fmt.Sprintf("%0.2f\n", inp)
+	str0 := fmt.Sprintf("%0.2f", inp)
 	na := strings.Split(str0, ".")
 	big := na[0]
 	var frac string
