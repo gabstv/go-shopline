@@ -47,6 +47,13 @@ func (s *SondaResult) Unwrap() {
 	s.Valor, _ = strconv.ParseFloat(strings.Replace(s.GetRawVal("Valor"), ",", ".", -1), 64)
 	s.TipoPgto = s.GetRawVal("tipPag")
 	s.SitPgto = s.GetRawVal("sitPag")
+	dmy := s.GetRawVal("dtPag")
+	if len(dmy) == 8 {
+		d, _ := strconv.Atoi(dmy[:2])
+		m, _ := strconv.Atoi(dmy[2:4])
+		y, _ := strconv.Atoi(dmy[4:])
+		s.DtPgto = time.Date(y, m, d, 12, 0, 0, 0, time.UTC)
+	}
 }
 
 type XMLParam struct {
