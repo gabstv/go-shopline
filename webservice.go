@@ -52,7 +52,7 @@ func (s *SondaResult) Unwrap() {
 		d, _ := strconv.Atoi(dmy[:2])
 		m, _ := strconv.Atoi(dmy[2:4])
 		y, _ := strconv.Atoi(dmy[4:])
-		s.DtPgto = time.Date(y, m, d, 12, 0, 0, 0, time.UTC)
+		s.DtPgto = time.Date(y, time.Month(m), d, 12, 0, 0, 0, time.UTC)
 	}
 }
 
