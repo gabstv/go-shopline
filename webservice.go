@@ -219,6 +219,11 @@ func New(codigo, chave string) *Webservice {
 	return ws
 }
 
+func (ws *Webservice) GetDC(boleto BoletoDef) (string, error) {
+	dc, err := ws.process(boleto)
+	return dc, err
+}
+
 func (ws *Webservice) GetBoleto(boleto BoletoDef) ([]byte, error) {
 	dc, err := ws.process(boleto)
 	if err != nil {
