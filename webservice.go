@@ -3,6 +3,7 @@ package shopline
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,39 @@ var (
 	R  = false
 	r0 = regexp.MustCompile("<consulta>(.+)\\s*<\\/consulta>")
 )
+
+type SondaResult struct {
+	XMLName       xml.Name   `xml:"PARAMETER"`
+	Z             []XMLParam `xml:"PARAM"`
+	CodigoEmpresa string
+	Pedido        int
+	Valor         float64
+	TipoPgto      string
+	SitPgto       string
+	DtPgto        time.Time
+}
+
+func (s *SondaResult) GetRawVal(name string) string {
+	for _, v := range s.Z {
+		if v.Id == name {
+			return v.Value
+		}
+	}
+	return ""
+}
+
+func (s *SondaResult) Unwrap() {
+	s.CodigoEmpresa = s.GetRawVal("CodEmp")
+	s.Pedido, _ = strconv.Atoi(s.GetRawVal("Pedido"))
+	s.Valor, _ = strconv.ParseFloat(strings.Replace(s.GetRawVal("Valor"), ",", ".", -1), 64)
+	s.TipoPgto = s.GetRawVal("tipPag")
+	s.SitPgto = s.GetRawVal("sitPag")
+}
+
+type XMLParam struct {
+	Id    string `xml:"ID,attr"`
+	Value string `xml:"VALUE,attr"`
+}
 
 const (
 	URL_BOLETO         = "https://shopline.itau.com.br/shopline/Impressao.aspx"
@@ -352,6 +386,27 @@ func (ws *Webservice) sonda(pedido int, formato string) (io.ReadCloser, error) {
 		return nil, errors.New("HTTP STATUS CODE " + resp.Status)
 	}
 	return resp.Body, nil
+}
+
+func (ws *Webservice) Sonda(pedido int) (*SondaResult, error) {
+	rc, err := ws.sonda(pedido, "1")
+	if err != nil {
+		return nil, err
+	}
+	buf := new(bytes.Buffer)
+	io.Copy(buf, rc)
+	rc.Close()
+	if !r0.MatchString(buf.String()) {
+		return nil, errors.New("XML MISMATCH: " + buf.String())
+	}
+	subm := r0.FindStringSubmatch(buf.String())
+	v := &SondaResult{}
+	err = xml.Unmarshal([]byte(subm[1]), v)
+	if err != nil {
+		return nil, err
+	}
+	v.Unwrap()
+	return v, nil
 }
 
 // gabs copypasta
