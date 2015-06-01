@@ -226,8 +226,8 @@ func (ws *Webservice) GetDC(boleto BoletoDef) (string, error) {
 }
 
 // encapsula o boleto e retorna o PDF
-// BETA
-func (ws *Webservice) GetBoletoPDF(boleto BoletoDef) ([]byte, error) {
+// referer: https://www.example.com
+func (ws *Webservice) GetBoletoPDF(boleto BoletoDef, referer string) ([]byte, error) {
 	dc, err := ws.process(boleto)
 	if err != nil {
 		return nil, err
@@ -255,6 +255,10 @@ func (ws *Webservice) GetBoletoPDF(boleto BoletoDef) ([]byte, error) {
 	}
 	// (͡° ͜ʖ ͡°)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Referer", referer)
 	// Do request
 	resp, err := httpc.Do(req)
 	if err != nil {
@@ -289,6 +293,9 @@ func (ws *Webservice) GetBoletoPDF(boleto BoletoDef) ([]byte, error) {
 	// (͡° ͜ʖ ͡°)
 	req.Header.Set("Referer", URL_SHOPLINE)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	// Finally do the request we want to
 	resp, err = httpc.Do(req)
 	if err != nil {
