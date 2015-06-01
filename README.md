@@ -6,7 +6,7 @@ Itau shopline for Google Go.
 go get github.com/gabstv/go-shopline
 ```
 
-## Example
+## Examples
 
 ### Get Bank Redirect Page  
 
@@ -39,7 +39,7 @@ func main(){
 		print(err.Error()+"\n")
 		return
 	}
-	print(htmlstring+\n")
+	print(htmlstring+"\n")
 }
 ```
 
