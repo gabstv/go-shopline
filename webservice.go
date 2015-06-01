@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"sort"
@@ -224,39 +225,81 @@ func (ws *Webservice) GetDC(boleto BoletoDef) (string, error) {
 	return dc, err
 }
 
-func (ws *Webservice) GetBoleto(boleto BoletoDef) ([]byte, error) {
+// encapsula o boleto e retorna o PDF
+// BETA
+func (ws *Webservice) GetBoletoPDF(boleto BoletoDef) ([]byte, error) {
 	dc, err := ws.process(boleto)
 	if err != nil {
 		return nil, err
 	}
 
-	v := url.Values{}
-	v.Set("DC", dc)
-	v.Set("cliente", "N")
-	v.Set("CodEmp", ws.Codigo)
-	v.Set("IdSite", "29772")
-	v.Set("npedido", boleto.cleanPedido())
-	v.Set("flag", "1")
-	v.Set("emissao", "1")
-	v.Set("soagenda", "")
+	//
+	// 1 - Visit Shopline landing page
+	cjar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, errors.New("HTTP COOKIEJAR ERR: " + err.Error())
+	}
+	httpc := &http.Client{
+		Jar:     cjar,
+		Timeout: time.Second * 30,
+	}
+	//
+	postv := url.Values{}
+	postv.Set("DC", dc)
 	buffer := new(bytes.Buffer)
-	buffer.WriteString(v.Encode())
-	req, err := http.NewRequest("POST", URL_BOLETO, buffer)
+	buffer.WriteString(postv.Encode())
+	//
+	req, err := http.NewRequest("POST", URL_SHOPLINE, buffer)
 	if err != nil {
 		return nil, err
 	}
-	cl := http.DefaultClient
-	cl.Timeout = time.Second * 30
-	resp, err := cl.Do(req)
+	// (͡° ͜ʖ ͡°)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36")
+	// Do request
+	resp, err := httpc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	//
+	if resp.StatusCode != 200 {
+		return nil, errors.New("HTTP STATUS CODE " + strconv.Itoa(resp.StatusCode))
+	}
+	buffer.Reset()
+	io.Copy(buffer, resp.Body) // read all, so the server is happy
+	resp.Body.Close()
+	//
+	// some cookies should have been grabbed by now
+	//
+	postv = url.Values{}
+	postv.Set("cliente", "N")
+	postv.Set("CodEmp", ws.Codigo)
+	postv.Set("IdSite", "29772")
+	postv.Set("npedido", boleto.cleanPedido())
+	postv.Set("flag", "1")
+	postv.Set("DC", dc)
+	postv.Set("emissao", "1")
+	postv.Set("soagenda", "")
+	buffer.Reset()
+	buffer.WriteString(postv.Encode())
+	//
+	req, err = http.NewRequest("POST", URL_BOLETO, buffer)
+	if err != nil {
+		return nil, err
+	}
+	// (͡° ͜ʖ ͡°)
+	req.Header.Set("Referer", URL_SHOPLINE)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36")
+	// Finally do the request we want to
+	resp, err = httpc.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.New("HTTP STATUS CODE " + strconv.Itoa(resp.StatusCode) + " " + resp.Status)
+		return nil, errors.New("HTTP STATUS CODE " + strconv.Itoa(resp.StatusCode))
 	}
 	buffer.Reset()
-	defer resp.Body.Close()
 	io.Copy(buffer, resp.Body)
+	resp.Body.Close()
 	return buffer.Bytes(), nil
 }
 
