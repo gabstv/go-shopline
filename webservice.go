@@ -241,7 +241,7 @@ func (ws *Webservice) GetBoletoPDF(boleto BoletoDef, referer string) ([]byte, er
 	}
 	httpc := &http.Client{
 		Jar:     cjar,
-		Timeout: time.Second * 10,
+		Timeout: time.Second * 6,
 	}
 	//
 	postv := url.Values{}
