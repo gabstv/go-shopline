@@ -4,6 +4,14 @@ import (
 	"testing"
 )
 
+func TestStrim(t *testing.T) {
+	a := "MARCIO DE MORAIS CAVEíRA DA ROZA"
+	b := ljust(strim(cleanstr(a), 30), " ", 30)
+	if b != "MARCIO DE MORAIS CAVEIRA DA RO" {
+		t.Fatalf("b is %v\n", b)
+	}
+}
+
 func Test1(t *testing.T) {
 	r0 := rr(5, 7)
 	r1 := rr(5, 7)
