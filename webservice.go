@@ -292,7 +292,7 @@ func (ws *Webservice) GetBoletoPDF(boleto BoletoDef, referer string) ([]byte, er
 	}
 	// (͡° ͜ʖ ͡°)
 	req.Header.Set("Referer", URL_SHOPLINE)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.71 Safari/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
