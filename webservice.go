@@ -233,12 +233,12 @@ func (ws *Webservice) GetBoletoPDF(boleto BoletoDef, referer string) ([]byte, er
 		return nil, err
 	}
 
-	return ws.GetBoletoDCPDF(dc, boleto.cleanPedido(), referer)
+	return ws.GetBoletoDCPDF(dc, boleto.Pedido, referer)
 }
 
 // encapsula o boleto e retorna o PDF
 // referer: https://www.example.com
-func (ws *Webservice) GetBoletoDCPDF(dc, npedido, referer string) ([]byte, error) {
+func (ws *Webservice) GetBoletoDCPDF(dc string, shoplineid int, referer string) ([]byte, error) {
 	//
 	// 1 - Visit Shopline landing page
 	cjar, err := cookiejar.New(nil)
@@ -284,7 +284,7 @@ func (ws *Webservice) GetBoletoDCPDF(dc, npedido, referer string) ([]byte, error
 	postv.Set("cliente", "N")
 	postv.Set("CodEmp", ws.Codigo)
 	postv.Set("IdSite", "29772")
-	postv.Set("npedido", npedido)
+	postv.Set("npedido", rjust(strconv.Itoa(shoplineid), "0", 8))
 	postv.Set("flag", "1")
 	postv.Set("DC", dc)
 	postv.Set("emissao", "1")
