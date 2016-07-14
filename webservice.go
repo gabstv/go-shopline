@@ -233,6 +233,12 @@ func (ws *Webservice) GetBoletoPDF(boleto BoletoDef, referer string) ([]byte, er
 		return nil, err
 	}
 
+	return ws.GetBoletoDCPDF(dc, boleto.cleanPedido(), referer)
+}
+
+// encapsula o boleto e retorna o PDF
+// referer: https://www.example.com
+func (ws *Webservice) GetBoletoDCPDF(dc, npedido, referer string) ([]byte, error) {
 	//
 	// 1 - Visit Shopline landing page
 	cjar, err := cookiejar.New(nil)
@@ -278,7 +284,7 @@ func (ws *Webservice) GetBoletoPDF(boleto BoletoDef, referer string) ([]byte, er
 	postv.Set("cliente", "N")
 	postv.Set("CodEmp", ws.Codigo)
 	postv.Set("IdSite", "29772")
-	postv.Set("npedido", boleto.cleanPedido())
+	postv.Set("npedido", npedido)
 	postv.Set("flag", "1")
 	postv.Set("DC", dc)
 	postv.Set("emissao", "1")
@@ -322,6 +328,18 @@ func (ws *Webservice) GetBoletoRedirectHTML(boleto BoletoDef) (string, error) {
 	buf.WriteString(dc)
 	buf.WriteString("\"></form><script>document.getElementById('itaushopline').submit();</script></body></html>")
 	return buf.String(), nil
+}
+
+func StripDCFromRedirectHTML(html string) (string, error) {
+	re, err := regexp.Compile(`name="DC" value="([A-z0-9]+)"`)
+	if err != nil {
+		return "", err
+	}
+	fa := re.FindStringSubmatch(html)
+	if len(fa) != 2 {
+		return "", errors.New("not found")
+	}
+	return fa[1], nil
 }
 
 func (ws *Webservice) assert() error {

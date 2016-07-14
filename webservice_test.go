@@ -4,6 +4,17 @@ import (
 	"testing"
 )
 
+func TestStrip(t *testing.T) {
+	a := `<html><body><form method="post" action="https://shopline.itau.com.br/shopline/shopline.aspx" id="itaushopline"><input type="hidden" name="DC" value="TENDIES"></form><script>document.getElementById('itaushopline').submit();</script></body></html>`
+	result, err := StripDCFromRedirectHTML(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "TENDIES" {
+		t.Fatalf("Result should be TENDIES but it is %v\n", result)
+	}
+}
+
 func TestStrim(t *testing.T) {
 	a := "MARCIO DE MORAIS CAVEíRA DA ROZA"
 	b := ljust(strim(cleanstr(a), 30), " ", 30)
