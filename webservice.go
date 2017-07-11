@@ -236,6 +236,8 @@ func (ws *Webservice) GetBoletoPDF(boleto BoletoDef, referer string) ([]byte, er
 	return ws.GetBoletoDCPDF(dc, boleto.Pedido, referer)
 }
 
+var erroPDFRegExp = regexp.MustCompile(`Houve problema no processamento, tente mais tarde`)
+
 // encapsula o boleto e retorna o PDF
 // referer: https://www.example.com
 func (ws *Webservice) GetBoletoDCPDF(dc string, shoplineid int, referer string) ([]byte, error) {
@@ -313,6 +315,13 @@ func (ws *Webservice) GetBoletoDCPDF(dc string, shoplineid int, referer string) 
 	buffer.Reset()
 	io.Copy(buffer, resp.Body)
 	resp.Body.Close()
+
+	if buffer.Len() < 1024*32 {
+		if erroPDFRegExp.Match(buffer.Bytes()) {
+			return buffer.Bytes(), errors.New("houve um problema no processamento (erro desconhecido shopline)")
+		}
+	}
+
 	return buffer.Bytes(), nil
 }
 
